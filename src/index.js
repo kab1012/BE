@@ -5,9 +5,13 @@ const cors = require('cors');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+
 const app = express();
 const port = process.env.PORT || 3001;
 
+const JWT_SECRET = 'your_jwt_secret_key'; 
 
 
 // Middleware
@@ -21,12 +25,11 @@ const db = new sqlite3.Database(process.env.DB_PATH, (err) => {
   } else {
     console.log('Connected to SQLite database');
 
-
-
     db.run(`CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
+      password TEXT UNIQUE NOT NULL,
       phone TEXT NOT NULL,
       address TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -64,40 +67,126 @@ app.get('/api/users', (req, res) => {
   });
 });
 
-app.post('/api/users', (req, res) => {
-  const { name, email, phone, address } = req.body;
+// app.post('/api/users', (req, res) => {
+//   const { name, email, phone, address, password } = req.body;
 
-  // Validate required fields
-  if (!name || !email || !phone || !address) {
-    return res.status(400).json({ error: 'All fields (name, email, phone, address) are required' });
-  }
+//   // Validate required fields
+//   if (!name || !email || !phone || !address) {
+//     return res.status(400).json({ error: 'All fields (name, email, phone, address) are required' });
+//   }
 
   
+//   // Validate email format
+//   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+//   if (!emailRegex.test(email)) {
+//     return res.status(400).json({ error: 'Invalid email format' });
+//   }
+
+//   const sql = `INSERT INTO users (name, email, phone, address) VALUES (?, ?, ?, ?)`;
+//   db.run(sql, [name, email, phone, address], function (err) {
+//     if (err) {
+//       if (err.code === 'SQLITE_CONSTRAINT') {
+//         return res.status(400).json({ error: 'Email already exists' });
+//       }
+//       return res.status(500).json({ error: err.message });
+//     }
+//     res.status(201).json({
+//       id: this.lastID,
+//       name,
+//       email,
+//       phone,
+//       address,
+//       message: 'User created successfully'
+//     });
+//   });
+// });
+
+app.post('/api/login', (req, res) => {
+  const { email, password } = req.body;
+
+  // Check if email and password are provided
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  const sql = `SELECT * FROM users WHERE email = ?`;
+  db.get(sql, [email], async (err, user) => {
+    if (err) return res.status(500).json({ error: 'Database error' });
+
+    // Check if user exists
+    if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+
+    // Debugging step: Log the user object to check the password field
+    console.log('Fetched user:', user);
+
+    try {
+      // Check if user.password exists before comparing
+      if (!user.password) {
+        return res.status(400).json({ error: 'No password found for this user' });
+      }
+
+      // Compare the entered password with the hashed password stored in the database
+      const match = await bcrypt.compare(password, user.password);
+
+      // If the password doesn't match, send an error response
+      if (!match) return res.status(401).json({ error: 'Invalid email or password' });
+
+      // Generate JWT token if password matches
+      const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
+        expiresIn: '1d', // Token expires in 1 day
+      });
+
+      // Respond with the token and a success message
+      res.json({ token, message: 'Login successful' });
+    } catch (error) {
+      // Catch any error during password comparison or token generation
+      console.error('Error during login process:', error);
+      res.status(500).json({ error: 'Something went wrong during login' });
+    }
+  });
+});
+
+app.post('/api/users', async (req, res) => {
+  const { name, email, phone, address, password } = req.body;
+
+  // Validate required fields
+  if (!name || !email || !phone || !address || !password) {
+    return res.status(400).json({ error: 'All fields (name, email, phone, address, password) are required' });
+  }
+
   // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
     return res.status(400).json({ error: 'Invalid email format' });
   }
 
-  const sql = `INSERT INTO users (name, email, phone, address) VALUES (?, ?, ?, ?)`;
-  db.run(sql, [name, email, phone, address], function (err) {
-    if (err) {
-      if (err.code === 'SQLITE_CONSTRAINT') {
-        return res.status(400).json({ error: 'Email already exists' });
-      }
-      return res.status(500).json({ error: err.message });
-    }
-    res.status(201).json({
-      id: this.lastID,
-      name,
-      email,
-      phone,
-      address,
-      message: 'User created successfully'
-    });
-  });
-});
+  try {
+    // Hash the password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
 
+    const sql = `INSERT INTO users (name, email, phone, address, password) VALUES (?, ?, ?, ?, ?)`;
+    db.run(sql, [name, email, phone, address, hashedPassword], function (err) {
+      if (err) {
+        if (err.code === 'SQLITE_CONSTRAINT') {
+          return res.status(400).json({ error: 'Email already exists' });
+        }
+        return res.status(500).json({ error: err.message });
+      }
+      res.status(201).json({
+        id: this.lastID,
+        name,
+        password,
+        email,
+        phone,
+        address,
+        message: 'User created successfully',
+      });
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to hash password' });
+  }
+});
 app.get('/api/tasks', (req, res) => {
   db.all('SELECT * FROM tasks', [], (err, rows) => {
     if (err) {
