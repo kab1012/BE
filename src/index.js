@@ -11,7 +11,7 @@ const bcrypt = require('bcrypt');
 const app = express();
 const port = process.env.PORT || 3001;
 
-const JWT_SECRET = 'your_jwt_secret_key'; 
+const JWT_SECRET = 'your_jwt_secret_key';
 
 
 // Middleware
@@ -25,13 +25,15 @@ const db = new sqlite3.Database(process.env.DB_PATH, (err) => {
   } else {
     console.log('Connected to SQLite database');
 
+
     db.run(`CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uid TEXT NOT NULL,
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
-      password TEXT UNIQUE NOT NULL,
-      phone TEXT NOT NULL,
-      address TEXT NOT NULL,
+      password TEXT UNIQUE,
+      phone TEXT,
+      address TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
@@ -44,6 +46,9 @@ const db = new sqlite3.Database(process.env.DB_PATH, (err) => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
     )`);
+
+    // db.run('DROP TABLE IF EXISTS users')
+    // db.run('DROP TABLE IF EXISTS tasks')
   }
 });
 
@@ -75,7 +80,7 @@ app.get('/api/users', (req, res) => {
 //     return res.status(400).json({ error: 'All fields (name, email, phone, address) are required' });
 //   }
 
-  
+
 //   // Validate email format
 //   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 //   if (!emailRegex.test(email)) {
@@ -187,6 +192,7 @@ app.post('/api/users', async (req, res) => {
     res.status(500).json({ error: 'Failed to hash password' });
   }
 });
+
 app.get('/api/tasks', (req, res) => {
   db.all('SELECT * FROM tasks', [], (err, rows) => {
     if (err) {
@@ -196,6 +202,78 @@ app.get('/api/tasks', (req, res) => {
     res.json(rows);
   });
 });
+
+// POST /api/users/google-auth
+app.post('/api/users/google-auth', (req, res) => {
+  const { uid, name, email } = req.body;
+
+  const checkByUID = `SELECT * FROM users WHERE uid = ?`;
+  db.get(checkByUID, [uid], (err, rowByUID) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    if (rowByUID) {
+      // User with UID exists – update info
+      const updateQuery = `UPDATE users SET name = ?, email = ? WHERE uid = ?`;
+      db.run(updateQuery, [name, email, uid], function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+
+        const token = jwt.sign({ id: rowByUID.id, email: rowByUID.email }, JWT_SECRET, {
+          expiresIn: '1d',
+        });
+
+        res.json({
+          message: 'Login successful',
+          token,
+          user: { id: rowByUID.id, uid: rowByUID.uid, name, email },
+        });
+      });
+    } else {
+      // No UID found, check by email
+      const checkByEmail = `SELECT * FROM users WHERE email = ?`;
+      db.get(checkByEmail, [email], (err, rowByEmail) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        if (rowByEmail) {
+          // Email exists – update UID
+          const updateUIDQuery = `UPDATE users SET uid = ?, name = ? WHERE email = ?`;
+          db.run(updateUIDQuery, [uid, name, email], function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+
+            const token = jwt.sign({ id: rowByEmail.id, email }, JWT_SECRET, {
+              expiresIn: '1d',
+            });
+
+            res.json({
+              message: 'Login successful',
+              token,
+              user: { id: rowByEmail.id, uid, name, email },
+            });
+          });
+        } else {
+          // New user – insert
+          const insertQuery = `INSERT INTO users (uid, name, email) VALUES (?, ?, ?)`;
+          db.run(insertQuery, [uid, name, email], function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+
+            const insertedId = this.lastID;
+
+            const token = jwt.sign({ id: insertedId, email }, JWT_SECRET, {
+              expiresIn: '1d',
+            });
+
+            res.json({
+              message: 'Login successful',
+              token,
+              user: { id: insertedId, uid, name, email },
+            });
+          });
+        }
+      });
+    }
+  });
+});
+
+
 
 app.post('/api/tasks', (req, res) => {
   const { user_id, tasks, status } = req.body;
