@@ -21,16 +21,6 @@ const db = new sqlite3.Database(process.env.DB_PATH, (err) => {
   } else {
     console.log('Connected to SQLite database');
 
-    // Create customers table
-    db.run(`CREATE TABLE IF NOT EXISTS customers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      phone TEXT NOT NULL,
-      address TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
-
 
 
     db.run(`CREATE TABLE IF NOT EXISTS users (
@@ -42,19 +32,6 @@ const db = new sqlite3.Database(process.env.DB_PATH, (err) => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
-
-    // Create loans table
-    db.run(`CREATE TABLE IF NOT EXISTS loans (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      customer_id INTEGER NOT NULL,
-      gold_items TEXT NOT NULL,
-      amount REAL NOT NULL,
-      interest_rate REAL NOT NULL,
-      status TEXT DEFAULT 'active',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (customer_id) REFERENCES customers(id)
-    )`);
-
     // Create tasks table
     db.run(`CREATE TABLE IF NOT EXISTS tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,17 +40,6 @@ const db = new sqlite3.Database(process.env.DB_PATH, (err) => {
       status TEXT DEFAULT 'active',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
-    )`);
-
-
-    // Create payments table
-    db.run(`CREATE TABLE IF NOT EXISTS payments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      loan_id INTEGER NOT NULL,
-      amount REAL NOT NULL,
-      payment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-      payment_type TEXT NOT NULL,
-      FOREIGN KEY (loan_id) REFERENCES loans(id)
     )`);
   }
 });
@@ -84,17 +50,6 @@ app.get('/api/test', (req, res) => {
   res.json({ message: 'API is working!' });
 });
 
-// Customer APIs
-
-app.get('/api/customers', (req, res) => {
-  db.all('SELECT * FROM customers', [], (err, rows) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    res.json(rows);
-  });
-});
 
 app.get('/api/users', (req, res) => {
   db.all('SELECT * FROM users', [], (err, rows) => {
@@ -106,56 +61,6 @@ app.get('/api/users', (req, res) => {
     console.log('db exists');
 
     res.json(rows);
-  });
-});
-
-
-app.get('/api/customers/:id', (req, res) => {
-  const id = req.params.id;
-  db.get('SELECT * FROM customers WHERE id = ?', [id], (err, row) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    if (!row) {
-      res.status(404).json({ error: 'Customer not found' });
-      return;
-    }
-    res.json(row);
-  });
-});
-
-
-app.post('/api/customers', (req, res) => {
-  const { name, email, phone, address } = req.body;
-
-  // Validate required fields
-  if (!name || !email || !phone || !address) {
-    return res.status(400).json({ error: 'All fields (name, email, phone, address) are required' });
-  }
-
-  // Validate email format
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    return res.status(400).json({ error: 'Invalid email format' });
-  }
-
-  const sql = `INSERT INTO customers (name, email, phone, address) VALUES (?, ?, ?, ?)`;
-  db.run(sql, [name, email, phone, address], function (err) {
-    if (err) {
-      if (err.code === 'SQLITE_CONSTRAINT') {
-        return res.status(400).json({ error: 'Email already exists' });
-      }
-      return res.status(500).json({ error: err.message });
-    }
-    res.status(201).json({
-      id: this.lastID,
-      name,
-      email,
-      phone,
-      address,
-      message: 'Customer created successfully'
-    });
   });
 });
 
@@ -193,18 +98,6 @@ app.post('/api/users', (req, res) => {
   });
 });
 
-// Loan APIs
-
-app.get('/api/loans', (req, res) => {
-  db.all('SELECT * FROM loans', [], (err, rows) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    res.json(rows);
-  });
-});
-
 app.get('/api/tasks', (req, res) => {
   db.all('SELECT * FROM tasks', [], (err, rows) => {
     if (err) {
@@ -212,35 +105,6 @@ app.get('/api/tasks', (req, res) => {
       return;
     }
     res.json(rows);
-  });
-});
-
-app.post('/api/loans', (req, res) => {
-  const { customer_id, gold_items, amount, interest_rate, status } = req.body;
-
-  // Validate required fields
-  if (!customer_id || !gold_items || !amount || !interest_rate || !status) {
-    return res.status(400).json({ error: 'All fields are required' });
-  }
-
-  const sql = `INSERT INTO loans (customer_id, gold_items, amount, interest_rate, status) VALUES (?, ?, ?, ?, ?)`;
-
-  db.run(sql, [customer_id, gold_items, amount, interest_rate, status], function (err) {
-    if (err) {
-      if (err.code === 'SQLITE_CONSTRAINT') {
-        return res.status(400).json({ error: 'Loan already exists' });
-      }
-      return res.status(500).json({ error: err.message });
-    }
-    res.status(201).json({
-      id: this.lastID,
-      customer_id,
-      gold_items,
-      amount,
-      interest_rate,
-      status,
-      message: 'Loan created successfully'
-    });
   });
 });
 
@@ -281,21 +145,6 @@ app.post('/api/tasks', (req, res) => {
         message: 'Task created successfully'
       });
     });
-  });
-});
-
-app.get('/api/loans/:id', (req, res) => {
-  const id = req.params.id;
-  db.get('SELECT * FROM loans WHERE id = ?', [id], (err, row) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    if (!row) {
-      res.status(404).json({ error: 'Loan not found' });
-      return;
-    }
-    res.json(row);
   });
 });
 
@@ -348,31 +197,6 @@ app.patch('/api/tasks/:id/complete', (req, res) => {
     }
 
     res.status(200).json({ message: 'Task marked as completed' });
-  });
-});
-
-
-
-// Payment APIs
-app.get('/api/payments', (req, res) => {
-  db.all('SELECT * FROM payments', [], (err, rows) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    res.json(rows);
-  });
-});
-
-
-app.get('/api/payments/loan/:loanId', (req, res) => {
-  const loanId = req.params.loanId;
-  db.all('SELECT * FROM payments WHERE loan_id = ?', [loanId], (err, rows) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    res.json(rows);
   });
 });
 
