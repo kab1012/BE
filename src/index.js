@@ -137,7 +137,7 @@ app.post('/api/login', (req, res) => {
       });
 
       // Respond with the token and a success message
-      res.json({ token, message: 'Login successful' });
+      res.json({ token, user, message: 'Login successful' });
     } catch (error) {
       // Catch any error during password comparison or token generation
       console.error('Error during login process:', error);
@@ -251,6 +251,22 @@ app.get('/api/tasks/:id', (req, res) => {
     res.json(row);
   });
 });
+
+app.get('/api/tasks/users/:id', (req, res) => {
+  const id = req.params.id;
+  db.all('SELECT * FROM tasks WHERE user_id = ?', [id], (err, rows) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'No tasks found for this user' });
+      return;
+    }
+    res.json(rows); // Return an array of tasks
+  });
+});
+
 
 // delete a task
 app.delete('/api/tasks/:id', (req, res) => {
