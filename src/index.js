@@ -44,6 +44,7 @@ const db = new sqlite3.Database(process.env.DB_PATH, (err) => {
       tasks TEXT NOT NULL,
       status TEXT DEFAULT 'active',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      due_date DATETIME NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id)
     )`);
 
@@ -276,10 +277,10 @@ app.post('/api/users/google-auth', (req, res) => {
 
 
 app.post('/api/tasks', (req, res) => {
-  const { user_id, tasks, status } = req.body;
+  const { user_id, tasks, status, due_date } = req.body;
 
   // Validate required fields
-  if (!user_id || !tasks || !status) {
+  if (!user_id || !tasks || !status ||!due_date) {
     return res.status(400).json({ error: 'All fields are required' });
   }
 
@@ -295,8 +296,8 @@ app.post('/api/tasks', (req, res) => {
     }
 
     // User exists, proceed to insert task
-    const insertTaskSql = `INSERT INTO tasks (user_id, tasks, status) VALUES (?, ?, ?)`;
-    db.run(insertTaskSql, [user_id, tasks, status], function (err) {
+    const insertTaskSql = `INSERT INTO tasks (user_id, tasks, status, due_date) VALUES (?, ?, ?, ?)`;
+    db.run(insertTaskSql, [user_id, tasks, status, due_date], function (err) {
       if (err) {
         if (err.code === 'SQLITE_CONSTRAINT') {
           return res.status(400).json({ error: 'Task constraint error' });
@@ -309,6 +310,7 @@ app.post('/api/tasks', (req, res) => {
         user_id,
         tasks,
         status,
+        due_date,
         message: 'Task created successfully'
       });
     });
@@ -323,7 +325,7 @@ app.get('/api/tasks/:id', (req, res) => {
       return;
     }
     if (!row) {
-      res.status(404).json({ error: 'Loan not found' });
+      res.status(404).json({ error: 'Task not found' });
       return;
     }
     res.json(row);
